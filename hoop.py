@@ -4,12 +4,13 @@ import numpy as np
 import subprocess
 import imutils
 
-ard=False
+ard=True #Whether an Arduino is connected
+
 points = []
 sendPrev=0
 frames = 0
 tracking = False
-cam = 0
+cam = 0 #0 for built in webcam, higher number for additional connected webcams
 cap = cv2.VideoCapture(cam)
 
 cap.set(12, 1.0) #Saturation
@@ -44,32 +45,35 @@ intercept = 0
 initial = (0, 0)
 distance = 0
 
+#Checks if two points are within a certain distance of each other
 def close_points(p1, p2, x):
     if abs(p1[0]-p2[0]) < x and abs(p1[1]-p2[1]) < x:
         return True
     else:
         return False
 
+#Loop exits when you press k
 while k != 27 and k != ord('q'):
     ret, frame = cap.read()
 
-    if cam > 5:
+    if cam == 1 : #For mac where monitor is smaller
         frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
     else:
         frame = cv2.resize(frame, (0, 0), fx=1, fy=1)
-    blurred = cv2.GaussianBlur(frame, (5, 5), 5)
-    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    blurred = cv2.GaussianBlur(frame, (5, 5), 5) #blur frame
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV) #convert from BGR to HSV for easier tracking
 
     # Green BGR 35 50 50
     # 65 255 255
     lower = np.array([35, 50, 50])
     upper = np.array([65, 255, 255])
 
-    mask = cv2.inRange(hsv, lower, upper)
+    mask = cv2.inRange(hsv, lower, upper) #Isolate green
 
-    cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) #Create contours from mask
     cnts = cnts[0] if imutils.is_cv2() else cnts[1]
 
+    #Find moment of inertia of first contour
     if np.count_nonzero(mask) and len(cnts) > 0:
         c = cnts[0]
         M = cv2.moments(c)
@@ -80,18 +84,21 @@ while k != 27 and k != ord('q'):
     if frames % 5 == 0:
         points.append((cX, cY))
 
+    #If the ball stays in the same place, reset initial
     if len(points) > 4 and close_points(points[-4], points[-1], 5) and not close_points(initial, (cX, cY), 5):
         #initial = (cX, cY)
         initial = (640,240)
         if not initial == (0, 0) and not initial == (640, 240):
             subprocess.Popen(["aplay", "/home/freder/Music/misc/beep.wav"])
 
+    #find slope between initial and current position and find intercept with edge of frame
     if len(points) > 2:
         slope = 1000
         if initial[0] != cX:
             slope = float ((initial[1] - cY)) / (initial[0] - cX)
             intercept = cY - int (slope * (cX + distance))
 
+    #Write intercept to serial
     send = intercept
     if ard:
         send = 23900 - int(float(intercept) / 480 * 23900)
